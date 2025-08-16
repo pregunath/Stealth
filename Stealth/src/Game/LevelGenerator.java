@@ -21,7 +21,7 @@ public class LevelGenerator {
     public static final int GAP = 6;
 
     protected  int[][] map;
-    private final Random rand;
+    protected final Random rand;
     private int exitX, exitY;
 
     public LevelGenerator() {

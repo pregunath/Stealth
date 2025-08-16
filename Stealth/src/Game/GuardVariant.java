@@ -5,6 +5,7 @@ import javafx.scene.image.Image;
 import javafx.scene.paint.Color;
 import java.util.List;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Random;
 
 public class GuardVariant {
@@ -17,19 +18,17 @@ public class GuardVariant {
     private final double movingRadius = 60;
     private final double movingSpeed = 1.5;
     
-    private static final double FIELD_OF_VIEW = 90; // degrees
-    private static final double DIRECT_VIEW_ANGLE = 30; // degrees for full detection
+    private static final double FIELD_OF_VIEW = 90;
+    private static final double DIRECT_VIEW_ANGLE = 30;
     
     private GuardType type;
     private final LevelGenerator level;
     private final Random rand;
     
-    // For moving guards
     private List<int[]> path = new ArrayList<>();
     private int currentPathIndex = 0;
     private long idleUntil = 0;
     
-    // Visuals
     private final Image idleImage;
     private final Image runImage;
     private Image currentImage;
@@ -60,7 +59,7 @@ public class GuardVariant {
 
         if (path == null || path.isEmpty() || currentPathIndex >= path.size()) {
             findNewPath(level);
-            idleUntil = now + rand.nextInt(2000) + 1000; // Idle for 1-3 sec before next path
+            idleUntil = now + rand.nextInt(2000) + 1000;
             return;
         }
 
@@ -78,6 +77,11 @@ public class GuardVariant {
             double moveX = movingSpeed * dx / dist;
             double moveY = movingSpeed * dy / dist;
 
+            // In platformer mode, only move horizontally
+            if (level instanceof PlatformLevelGenerator) {
+                moveY = 0;
+            }
+
             double newX = x + moveX;
             double newY = y + moveY;
 
@@ -92,21 +96,39 @@ public class GuardVariant {
         int guardTileX = (int) (x / LevelGenerator.TILE_SIZE);
         int guardTileY = (int) (y / LevelGenerator.TILE_SIZE);
 
-        int attempts = 0;
-        List<int[]> newPath = null;
-
-        while (attempts < 50) {
-            int[] newPos = level.getRandomFloorPosition();
-            newPath = Pathfinder.findPath(level, guardTileX, guardTileY, newPos[0], newPos[1]);
-            if (!newPath.isEmpty()) break;
-            attempts++;
-        }
-
-        if (newPath != null && !newPath.isEmpty()) {
-            this.path = newPath;
-            this.currentPathIndex = 0;
+        if (level instanceof PlatformLevelGenerator) {
+            // For platformer mode - simple left-right patrol
+            int patrolDistance = 3 + rand.nextInt(3); // 3-5 tiles patrol
+            int[] leftTarget = {Math.max(0, guardTileX - patrolDistance), guardTileY};
+            int[] rightTarget = {Math.min(LevelGenerator.WIDTH-1, guardTileX + patrolDistance), guardTileY};
+            
+            // Alternate between left and right
+            if (path == null || path.isEmpty() || currentPathIndex >= path.size()) {
+                if (rand.nextBoolean()) {
+                    path = Arrays.asList(leftTarget, rightTarget);
+                } else {
+                    path = Arrays.asList(rightTarget, leftTarget);
+                }
+                currentPathIndex = 0;
+            }
         } else {
-            this.path = new ArrayList<>();
+            // Original pathfinding for stealth mode
+            int attempts = 0;
+            List<int[]> newPath = null;
+
+            while (attempts < 50) {
+                int[] newPos = level.getRandomFloorPosition();
+                newPath = Pathfinder.findPath(level, guardTileX, guardTileY, newPos[0], newPos[1]);
+                if (!newPath.isEmpty()) break;
+                attempts++;
+            }
+
+            if (newPath != null && !newPath.isEmpty()) {
+                this.path = newPath;
+                this.currentPathIndex = 0;
+            } else {
+                this.path = new ArrayList<>();
+            }
         }
     }
 
@@ -139,7 +161,6 @@ public class GuardVariant {
         double centerX = x + width / 2;
         double centerY = y + height / 2;
 
-        // Draw vision radius
         double radius = (type == GuardType.STANDING) ? standingRadius : movingRadius;
         Color visionColor = (type == GuardType.STANDING) ? 
             Color.rgb(255, 0, 0, 0.2) : Color.rgb(255, 165, 0, 0.2);
@@ -147,12 +168,11 @@ public class GuardVariant {
         gc.setFill(visionColor);
         gc.fillOval(centerX - radius, centerY - radius, radius * 2, radius * 2);
 
-        // Draw guard
         gc.drawImage(currentImage, x, y, width, height);
     }
 
     public boolean canSee(Player player) {
-        if (player.isHidden()) return false;
+        if (player == null || player.isHidden()) return false;
         
         double guardCenterX = x + width/2;
         double guardCenterY = y + height/2;
@@ -168,13 +188,11 @@ public class GuardVariant {
             return false;
         }
         
-        // Check if player is in field of view
         if (getDetectionAngleFactor(player) <= 0) {
             return false;
         }
         
-        // More precise line of sight check with smaller increments
-        int steps = (int)(Math.sqrt(distanceSquared) / 4); // Check every 4 pixels
+        int steps = (int)(Math.sqrt(distanceSquared) / 4);
         if (steps == 0) steps = 1;
         
         for (int i = 1; i <= steps; i++) {
@@ -207,44 +225,37 @@ public class GuardVariant {
     }
     
     public double getDetectionAngleFactor(Player player) {
-        // Calculate angle between guard's facing direction and player
+        if (player == null) return 0;
+        
         double guardCenterX = x + width/2;
         double guardCenterY = y + height/2;
         
-        // For standing guards, assume they're facing the direction they're looking
-        // For moving guards, use their movement direction
         double facingAngle;
         if (type == GuardType.STANDING) {
-            // Standing guards look in random directions (simplified)
-            facingAngle = System.currentTimeMillis() % 360; // pseudo-random facing
+            facingAngle = System.currentTimeMillis() % 360;
         } else {
-            // Moving guards face their movement direction
             if (path != null && !path.isEmpty() && currentPathIndex < path.size()) {
                 int[] target = path.get(currentPathIndex);
                 double targetX = target[0] * LevelGenerator.TILE_SIZE;
                 double targetY = target[1] * LevelGenerator.TILE_SIZE;
                 facingAngle = Math.toDegrees(Math.atan2(targetY - guardCenterY, targetX - guardCenterX));
             } else {
-                facingAngle = 0; // default if not moving
+                facingAngle = 0;
             }
         }
         
-        // Calculate angle to player
         double angleToPlayer = Math.toDegrees(Math.atan2(
             player.getY() - guardCenterY, 
             player.getX() - guardCenterX
         ));
         
-        // Normalize angles
         double angleDiff = Math.abs(normalizeAngle(angleToPlayer - facingAngle));
         
-        // Calculate detection factor based on angle
         if (angleDiff > FIELD_OF_VIEW/2) {
-            return 0; // outside field of view
+            return 0;
         } else if (angleDiff <= DIRECT_VIEW_ANGLE/2) {
-            return 1.0; // direct view
+            return 1.0;
         } else {
-            // Gradual falloff from center to edge of FOV
             return 1.0 - ((angleDiff - DIRECT_VIEW_ANGLE/2) / (FIELD_OF_VIEW/2 - DIRECT_VIEW_ANGLE/2));
         }
     }
@@ -263,22 +274,8 @@ public class GuardVariant {
         return (type == GuardType.STANDING) ? standingRadius : movingRadius;
     }
 
-	public double getX() {
-		// TODO Auto-generated method stub
-		return x;
-	}
-
-	public double getY() {
-		// TODO Auto-generated method stub
-		return y;
-	}
-
-	public double getWidth() {
-		// TODO Auto-generated method stub
-		return width;
-	}
-	public double getHeight() {
-		// TODO Auto-generated method stub
-		return height;
-	}
+    public double getX() { return x; }
+    public double getY() { return y; }
+    public double getWidth() { return width; }
+    public double getHeight() { return height; }
 }
