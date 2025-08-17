@@ -10,7 +10,7 @@ public class SneakyGear extends Gear {
                 break;
             case "Boots":
                 this.name = "Silent Boots";
-                this.description = "Makes footsteps completely silent";
+                this.description = "Makes footsteps completely silent, and allows the user to stay in the guard's cone of vision for a certain time.";
                 break;
             case "Gloves":
                 this.name = "Thief's Gloves";

@@ -6,11 +6,7 @@ public class AgileGear extends Gear {
         switch(type) {
             case "Boots":
                 this.name = "Swift Boots";
-                this.description = "Increases movement speed by 25%";
-                break;
-            case "Belt":
-                this.name = "Acrobat's Belt";
-                this.description = "Allows jumping over small obstacles";
+                this.description = "Increases movement speed by 25% (stacks with class bonus)";
                 break;
             case "Gloves":
                 this.name = "Grip Gloves";

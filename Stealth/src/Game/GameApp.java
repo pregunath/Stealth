@@ -12,6 +12,8 @@ import javafx.scene.layout.StackPane;
 import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.stage.Stage;
+
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -46,6 +48,7 @@ public class GameApp extends Application {
     
     private String selectedClass;
 
+    private List<CherryBombEffect> activeCherryBombs= new ArrayList<>();
     
     private Stage primaryStage;
     
@@ -173,12 +176,13 @@ public class GameApp extends Application {
                     if (!spotted) {
                         handleStealthControls();
                         player.update(level);
-                        
                         movingGuard.update(level);
                         
                         if (!player.isHidden()) {
-                            boolean seenByStanding = standingGuard != null && standingGuard.canSee(player);
-                            boolean seenByMoving = movingGuard != null && movingGuard.canSee(player);
+                            boolean seenByStanding = standingGuard != null && 
+                                                   standingGuard.canSee(player, activeCherryBombs);
+                            boolean seenByMoving = movingGuard != null && 
+                                                 movingGuard.canSee(player, activeCherryBombs);
                             if (seenByStanding || seenByMoving) {
                                 spotted = true;
                                 SoundManager.playAlert();
@@ -198,6 +202,16 @@ public class GameApp extends Application {
                     if (standingGuard != null) standingGuard.render(gc);
                     if (movingGuard != null) movingGuard.render(gc);
                     
+                    // Update and render cherry bombs
+                    activeCherryBombs.removeIf(effect -> {
+                        effect.update();
+                        return !effect.isActive();
+                    });
+                    
+                    for (CherryBombEffect effect : activeCherryBombs) {
+                        effect.render(gc);
+                    }
+                    
                     renderUI();
                     gc.restore();
                 } catch (Exception e) {
@@ -214,6 +228,10 @@ public class GameApp extends Application {
         player.handleInput(KeyCode.A, keys.getOrDefault(KeyCode.A, false));
         player.handleInput(KeyCode.D, keys.getOrDefault(KeyCode.D, false));
         player.handleInput(KeyCode.H, keys.getOrDefault(KeyCode.H, false));
+        
+        if (keys.getOrDefault(KeyCode.Q, false)) {
+            player.useCherryBomb(activeCherryBombs);
+        }
     }
 
     private void renderMap() {
@@ -430,11 +448,10 @@ public class GameApp extends Application {
         canvas = new Canvas(BASE_WIDTH, BASE_HEIGHT);
         gc = canvas.getGraphicsContext2D();
         StackPane root = new StackPane(canvas);
-        
         Scene scene = new Scene(root);
+        
         setupEventHandlers(scene);
         configureStage(scene);
     }
-
 
 }

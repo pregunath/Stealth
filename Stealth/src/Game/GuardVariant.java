@@ -18,6 +18,12 @@ public class GuardVariant {
     private final double movingRadius = 60;
     private final double movingSpeed = 1.5;
     
+    private double originalX, originalY;
+    private boolean isDistracted = false;
+    private long distractionStartTime;
+    private static final long DISTRACTION_DURATION = 3000; // 3 seconds
+    
+    
     private static final double FIELD_OF_VIEW = 90;
     private static final double DIRECT_VIEW_ANGLE = 30;
     
@@ -37,6 +43,9 @@ public class GuardVariant {
         this.level = level;
         this.type = type;
         this.rand = new Random();
+        
+        this.originalX = x;
+        this.originalY = y;
         
         int[] pos = level.getRandomFloorPosition();
         this.x = pos[0] * LevelGenerator.TILE_SIZE;
@@ -77,8 +86,6 @@ public class GuardVariant {
             double moveX = movingSpeed * dx / dist;
             double moveY = movingSpeed * dy / dist;
 
-
-
             double newX = x + moveX;
             double newY = y + moveY;
 
@@ -86,6 +93,24 @@ public class GuardVariant {
             if (canMoveTo(x, newY, level)) y = newY;
 
             currentImage = runImage;
+        }
+    }
+    
+    
+    public void distract(double targetX, double targetY) {
+        if (type == GuardType.STANDING) {
+            this.type = GuardType.MOVING;
+            this.isDistracted = true;
+            this.distractionStartTime = System.currentTimeMillis();
+            
+            // Find path to target location
+            int startX = (int)(x / LevelGenerator.TILE_SIZE);
+            int startY = (int)(y / LevelGenerator.TILE_SIZE);
+            int targetTileX = (int)(targetX / LevelGenerator.TILE_SIZE);
+            int targetTileY = (int)(targetY / LevelGenerator.TILE_SIZE);
+            
+            this.path = Pathfinder.findPath(level, startX, startY, targetTileX, targetTileY);
+            this.currentPathIndex = 0;
         }
     }
 
@@ -152,8 +177,23 @@ public class GuardVariant {
         gc.drawImage(currentImage, x, y, width, height);
     }
 
-    public boolean canSee(Player player) {
+    public boolean canSee(Player player, List<CherryBombEffect> cherryBombs) {
         if (player == null || player.isHidden()) return false;
+        
+        for (CherryBombEffect bomb : cherryBombs) {
+            if (bomb.affectsGuard(this)) {
+                if (type == GuardType.STANDING) {
+                    return false;
+                } else {
+                    double effectiveRadius = getVisionRadius() * 0.5;
+                    double distanceSq = Math.pow(player.getX() - (x + width/2), 2) + 
+                                      Math.pow(player.getY() - (y + height/2), 2);
+                    if (distanceSq > effectiveRadius * effectiveRadius) {
+                        return false;
+                    }
+                }
+            }
+        }
         
         double guardCenterX = x + width/2;
         double guardCenterY = y + height/2;
@@ -164,17 +204,15 @@ public class GuardVariant {
         
         double dx = playerCenterX - guardCenterX;
         double dy = playerCenterY - guardCenterY;
-        double distanceSquared = dx * dx + dy * dy;
+        double distanceSq = dx * dx + dy * dy;
         
         double radius = getVisionRadius();
         
-        
         if (player.isSneakyClass()) {
-            radius *= 0.8; // 20% reduction from Shadow Cloak
+            radius *= 0.8;
         }
         
-        
-        if (distanceSquared > radius * radius) {
+        if (distanceSq > radius * radius) {
             return false;
         }
         
@@ -182,7 +220,7 @@ public class GuardVariant {
             return false;
         }
         
-        int steps = (int)(Math.sqrt(distanceSquared) / 4);
+        int steps = (int)(Math.sqrt(distanceSq) / 4);
         if (steps == 0) steps = 1;
         
         for (int i = 1; i <= steps; i++) {

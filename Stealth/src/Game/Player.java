@@ -15,13 +15,13 @@ import javafx.scene.image.WritableImage;
 
 public class Player {
     private double x, y;
-    private final double speed = 3;
+    private final double baseSpeed = 3.0;
+    private double currentSpeed = baseSpeed;
     private final double width = 23;
     private final double height = 23;
     
     private boolean hideToggleRequested = false;
     private boolean holdToHideEnabled = false;
-    
     private boolean hideKeyWasPressed = false;
     private boolean hideKeyJustPressed = false;
     
@@ -40,10 +40,15 @@ public class Player {
     private final Font statusFont = new Font("Arial Bold", 28);
     private final Font cooldownFont = new Font("Arial", 16);
     
-    
     private List<Gear> equippedGear = new ArrayList<>();
     private boolean isSneakyClass = false;
     private boolean isAgileClass = false;
+    
+    // Cherry Bomb fields
+    private int cherryBombs = 2;
+    private final int MAX_CHERRY_BOMBS = 2;
+    private long lastBombTime = 0;
+    private static final long BOMB_COOLDOWN = 1000;
 
     public Player(LevelGenerator level) {
         int[] pos = level.getRandomFloorPosition();
@@ -65,14 +70,56 @@ public class Player {
     }
 
     public void update(LevelGenerator level) {
+        updateMovementSpeed();
         checkHideableProximity(level);
         handleHiding();
+        checkBarrelReplenish(level);
         
         if (!isHidden) {
             move(level);
         }
         
         hideKeyJustPressed = false;
+    }
+
+    private void updateMovementSpeed() {
+        currentSpeed = baseSpeed;
+        
+        if (isAgileClass) {
+            currentSpeed *= 1.25;
+        }
+        
+        for (Gear gear : equippedGear) {
+            if (gear instanceof AgileGear && gear.getName().equals("Swift Boots")) {
+                currentSpeed *= 1.25;
+                break;
+            }
+        }
+    }
+
+    public boolean useCherryBomb(List<CherryBombEffect> activeEffects) {
+        long currentTime = System.currentTimeMillis();
+        
+        if (cherryBombs > 0 && currentTime - lastBombTime > BOMB_COOLDOWN) {
+            cherryBombs--;
+            lastBombTime = currentTime;
+            //SoundManager.playSound("cherry_bomb_activate");
+            activeEffects.add(new CherryBombEffect(x + width/2, y + height/2));
+            return true;
+        }
+        return false;
+    }
+
+    public void checkBarrelReplenish(LevelGenerator level) {
+        int playerTileX = (int)(x / LevelGenerator.TILE_SIZE);
+        int playerTileY = (int)(y / LevelGenerator.TILE_SIZE);
+        
+        if (level.isHideable(playerTileX, playerTileY)) {
+            if (cherryBombs < MAX_CHERRY_BOMBS) {
+                cherryBombs = MAX_CHERRY_BOMBS;
+                //SoundManager.playSound("cherry_bomb_replenish");
+            }
+        }
     }
 
     private void handleHiding() {
@@ -119,12 +166,6 @@ public class Player {
     }
 
     private void move(LevelGenerator level) {
-        double effectiveSpeed = speed;
-        
-        if (isAgileClass) {
-            effectiveSpeed *= 1.25;
-        }
-        
         boolean up = keys.getOrDefault(KeyCode.W, false);
         boolean down = keys.getOrDefault(KeyCode.S, false);
         boolean left = keys.getOrDefault(KeyCode.A, false);
@@ -136,22 +177,19 @@ public class Player {
         isMoving = (moveX != 0 || moveY != 0);
 
         if (moveX != 0 && moveY != 0) {
-            // Normalize diagonal movement
             double len = Math.sqrt(moveX * moveX + moveY * moveY);
-            moveX = moveX / len * effectiveSpeed;
-            moveY = moveY / len * effectiveSpeed;
+            moveX = moveX / len * currentSpeed;
+            moveY = moveY / len * currentSpeed;
         } else {
-            moveX *= effectiveSpeed;
-            moveY *= effectiveSpeed;
+            moveX *= currentSpeed;
+            moveY *= currentSpeed;
         }
 
-        // Check collisions in X direction first
         double newX = x + moveX;
         if (!checkCollision(newX, y, level)) {
             x = newX;
         }
 
-        // Then check Y direction
         double newY = y + moveY;
         if (!checkCollision(x, newY, level)) {
             y = newY;
@@ -190,6 +228,10 @@ public class Player {
             gc.fillText("Hiding cooldown: " + (int)(cooldownProgress * 100) + "%", 
                        (canvasWidth - 150)/2, 75);
         }
+        
+        gc.setFont(cooldownFont);
+        gc.setFill(Color.PINK);
+        gc.fillText("Cherry Bombs: " + cherryBombs + "/" + MAX_CHERRY_BOMBS, 20, 30);
     }
 
     private void renderCenteredText(GraphicsContext gc, String text, 
@@ -280,10 +322,6 @@ public class Player {
         this.holdToHideEnabled = enabled;
     }
     
-    
-    
-    
-    
     public List<Gear> getEquippedGear() {
         return equippedGear;
     }
@@ -291,12 +329,10 @@ public class Player {
     public void setClassType(String classType) {
         if (classType.equals("Sneaky")) {
             isSneakyClass = true;
-            // Equip basic sneaky gear
             equipGear(new SneakyGear("Cloak"));
             equipGear(new SneakyGear("Boots"));
         } else if (classType.equals("Agile")) {
             isAgileClass = true;
-            // Equip basic agile gear
             equipGear(new AgileGear("Boots"));
             equipGear(new AgileGear("Belt"));
         }
@@ -309,7 +345,6 @@ public class Player {
     public boolean isAgileClass() {
         return isAgileClass;
     }
-    
     
     public void equipGear(Gear gear) {
         equippedGear.add(gear);

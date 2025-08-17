@@ -73,7 +73,7 @@ public class ClassSelectionScreen {
         gc.fillText("Specializes in movement and", 460, 220);
         gc.fillText("quick traversal.", 460, 240);
         gc.fillText("- Swift Boots", 460, 280);
-        gc.fillText("- Acrobat's Belt", 460, 300);
+        gc.fillText("- Grip Gloves", 460, 300);
     }
     
     private void handleMouseClick(MouseEvent event) {
