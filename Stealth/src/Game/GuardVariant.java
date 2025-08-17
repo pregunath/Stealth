@@ -77,10 +77,7 @@ public class GuardVariant {
             double moveX = movingSpeed * dx / dist;
             double moveY = movingSpeed * dy / dist;
 
-            // In platformer mode, only move horizontally
-            if (level instanceof PlatformLevelGenerator) {
-                moveY = 0;
-            }
+
 
             double newX = x + moveX;
             double newY = y + moveY;
@@ -96,22 +93,6 @@ public class GuardVariant {
         int guardTileX = (int) (x / LevelGenerator.TILE_SIZE);
         int guardTileY = (int) (y / LevelGenerator.TILE_SIZE);
 
-        if (level instanceof PlatformLevelGenerator) {
-            // For platformer mode - simple left-right patrol
-            int patrolDistance = 3 + rand.nextInt(3); // 3-5 tiles patrol
-            int[] leftTarget = {Math.max(0, guardTileX - patrolDistance), guardTileY};
-            int[] rightTarget = {Math.min(LevelGenerator.WIDTH-1, guardTileX + patrolDistance), guardTileY};
-            
-            // Alternate between left and right
-            if (path == null || path.isEmpty() || currentPathIndex >= path.size()) {
-                if (rand.nextBoolean()) {
-                    path = Arrays.asList(leftTarget, rightTarget);
-                } else {
-                    path = Arrays.asList(rightTarget, leftTarget);
-                }
-                currentPathIndex = 0;
-            }
-        } else {
             // Original pathfinding for stealth mode
             int attempts = 0;
             List<int[]> newPath = null;
@@ -129,7 +110,7 @@ public class GuardVariant {
             } else {
                 this.path = new ArrayList<>();
             }
-        }
+        
     }
 
     private boolean canMoveTo(double x, double y, LevelGenerator level) {
@@ -179,11 +160,20 @@ public class GuardVariant {
         double playerCenterX = player.getX();
         double playerCenterY = player.getY();
         
+        if (level == null) return false;
+        
         double dx = playerCenterX - guardCenterX;
         double dy = playerCenterY - guardCenterY;
         double distanceSquared = dx * dx + dy * dy;
         
         double radius = getVisionRadius();
+        
+        
+        if (player.isSneakyClass()) {
+            radius *= 0.8; // 20% reduction from Shadow Cloak
+        }
+        
+        
         if (distanceSquared > radius * radius) {
             return false;
         }

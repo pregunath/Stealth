@@ -5,6 +5,7 @@ import javafx.application.Application;
 import javafx.scene.Scene;
 import javafx.scene.canvas.Canvas;
 import javafx.scene.canvas.GraphicsContext;
+import javafx.scene.control.Alert;
 import javafx.scene.input.KeyCode;
 import javafx.scene.input.KeyEvent;
 import javafx.scene.layout.StackPane;
@@ -25,6 +26,7 @@ public class GameApp extends Application {
     private boolean levelComplete = false;
     private boolean spotted = false;
     private boolean paused = false;
+    private boolean initialized = false;
     
     private final Map<KeyCode, Boolean> keys = new HashMap<>();
     
@@ -38,32 +40,35 @@ public class GameApp extends Application {
     private double initialStandingGuardX, initialStandingGuardY;
     private double initialMovingGuardX, initialMovingGuardY;
     
-    private boolean isPlatformerLevel;
     private static final int BASE_WIDTH = 800;
     private static final int BASE_HEIGHT = 600;
     private static final Font MESSAGE_FONT = new Font("Arial", 24);
+    
+    private String selectedClass;
 
-    public GameApp(boolean isPlatformerLevel) {
-        this.isPlatformerLevel = isPlatformerLevel;
+    
+    private Stage primaryStage;
+    
+    
+    public GameApp(Stage primaryStage) {
+        this.primaryStage = primaryStage;
     }
-
+    
+    
     @Override
-    public void start(Stage stage) {
-        initializeGame();
-        
-        canvas = new Canvas(BASE_WIDTH, BASE_HEIGHT);
-        gc = canvas.getGraphicsContext2D();
-        StackPane root = new StackPane(canvas);
-        
-        Scene scene = new Scene(root);
-        setupEventHandlers(scene);
-        
-        configureStage(stage, scene);
-        startGameLoop();
+    public void start(Stage primaryStage) {
+        this.primaryStage = primaryStage;
+        primaryStage.setTitle("Stealth Roguelike");
+        showMainMenu();
+    }
+    
+    public void showMainMenu() {
+        new MainMenu(primaryStage, this);
+        primaryStage.show();
     }
 
     private void initializeGame() {
-        level = isPlatformerLevel ? new PlatformLevelGenerator() : new LevelGenerator();
+        level = new LevelGenerator();
         
         initialLevelState = new int[LevelGenerator.WIDTH][LevelGenerator.HEIGHT];
         for (int x = 0; x < LevelGenerator.WIDTH; x++) {
@@ -72,60 +77,39 @@ public class GameApp extends Application {
             }
         }
         
-        if (isPlatformerLevel) {
-            // For platformer mode - place one moving guard on a platform
-            int[] movingGuardPos = findPlatformGuardPosition(level);
-            movingGuard = new GuardVariant(level, GuardVariant.GuardType.MOVING);
-            movingGuard.setPosition(movingGuardPos[0] * LevelGenerator.TILE_SIZE,
-                                  movingGuardPos[1] * LevelGenerator.TILE_SIZE);
-            
-            // No standing guard in platformer mode
-            standingGuard = null;
-            
-            // Player spawn
-            int[] playerPos = level.getValidPlayerSpawn(Arrays.asList(movingGuardPos));
-            player = new Player(level, true);
-            player.setPosition(playerPos[0] * LevelGenerator.TILE_SIZE, 
-                             playerPos[1] * LevelGenerator.TILE_SIZE);
-        } else {
-            // Original stealth mode initialization
-            int[] standingGuardPos = level.getRandomFloorPosition();
-            int[] movingGuardPos = level.getRandomFloorPosition();
-            List<int[]> guardPositions = Arrays.asList(standingGuardPos, movingGuardPos);
-            
-            int[] playerPos = level.getValidPlayerSpawn(guardPositions);
-            
-            player = new Player(level, false);
-            player.setPosition(playerPos[0] * LevelGenerator.TILE_SIZE, 
-                             playerPos[1] * LevelGenerator.TILE_SIZE);
-            
-            standingGuard = new GuardVariant(level, GuardVariant.GuardType.STANDING);
-            standingGuard.setPosition(standingGuardPos[0] * LevelGenerator.TILE_SIZE,
-                                    standingGuardPos[1] * LevelGenerator.TILE_SIZE);
-            
-            movingGuard = new GuardVariant(level, GuardVariant.GuardType.MOVING);
-            movingGuard.setPosition(movingGuardPos[0] * LevelGenerator.TILE_SIZE,
-                                  movingGuardPos[1] * LevelGenerator.TILE_SIZE);
-        }
+        int[] standingGuardPos = level.getRandomFloorPosition();
+        int[] movingGuardPos = level.getRandomFloorPosition();
+        List<int[]> guardPositions = Arrays.asList(standingGuardPos, movingGuardPos);
+        
+        int[] playerPos = level.getValidPlayerSpawn(guardPositions);
+        
+        player = new Player(level);
+        player.setPosition(playerPos[0] * LevelGenerator.TILE_SIZE, 
+                         playerPos[1] * LevelGenerator.TILE_SIZE);
+        player.setClassType(selectedClass);
+        
+        standingGuard = new GuardVariant(level, GuardVariant.GuardType.STANDING);
+        standingGuard.setPosition(standingGuardPos[0] * LevelGenerator.TILE_SIZE,
+                                standingGuardPos[1] * LevelGenerator.TILE_SIZE);
+        
+        movingGuard = new GuardVariant(level, GuardVariant.GuardType.MOVING);
+        movingGuard.setPosition(movingGuardPos[0] * LevelGenerator.TILE_SIZE,
+                              movingGuardPos[1] * LevelGenerator.TILE_SIZE);
+        
+        initialPlayerX = player.getX();
+        initialPlayerY = player.getY();
+        initialStandingGuardX = standingGuardPos[0] * LevelGenerator.TILE_SIZE;
+        initialStandingGuardY = standingGuardPos[1] * LevelGenerator.TILE_SIZE;
+        initialMovingGuardX = movingGuardPos[0] * LevelGenerator.TILE_SIZE;
+        initialMovingGuardY = movingGuardPos[1] * LevelGenerator.TILE_SIZE;
         
         SoundManager.initialize();
         SoundManager.playBGM();
+        
+        initialized = true;
     }
 
-    private int[] findPlatformGuardPosition(LevelGenerator level) {
-        // Find a platform position on the right side of the level
-        for (int x = LevelGenerator.WIDTH * 3/4; x < LevelGenerator.WIDTH - 1; x++) {
-            for (int y = 1; y < LevelGenerator.HEIGHT - 1; y++) {
-                if (level.getTile(x, y) == LevelGenerator.PLATFORM && 
-                    level.getTile(x, y-1) == LevelGenerator.GAP) {
-                    return new int[]{x, y-1};
-                }
-            }
-        }
-        return level.getRandomFloorPosition(); // Fallback
-    }
-
-	private void setupEventHandlers(Scene scene) {
+    private void setupEventHandlers(Scene scene) {
         scene.setOnKeyPressed(e -> {
             keys.put(e.getCode(), true);
             handleSpecialKeys(e);
@@ -139,7 +123,7 @@ public class GameApp extends Application {
         canvas.widthProperty().addListener((obs, oldVal, newVal) -> resizeCanvas());
         canvas.heightProperty().addListener((obs, oldVal, newVal) -> resizeCanvas());
     }
-
+    
     private void handleSpecialKeys(KeyEvent e) {
         switch (e.getCode()) {
             case F11:
@@ -162,102 +146,66 @@ public class GameApp extends Application {
         }
     }
 
-    private void configureStage(Stage stage, Scene scene) {
+    private void configureStage(Scene scene) {
         scene.setFill(Color.DARKSLATEGRAY);
-        stage.setScene(scene);
-        stage.setTitle("Stealth");
-        stage.setMinWidth(600);
-        stage.setMinHeight(450);
-        stage.show();
+        primaryStage.setScene(scene); // Use primaryStage
+        primaryStage.setTitle("Stealth Roguelike - " + selectedClass + " Class");
+        primaryStage.setMinWidth(600);
+        primaryStage.setMinHeight(450);
     }
-
+    
     private void startGameLoop() {
         new AnimationTimer() {
             @Override
             public void handle(long now) {
-                if (paused) return;
+                if (!initialized || paused || gc == null) return;
                 
-                gc.setFill(Color.DARKSLATEGRAY);
-                gc.fillRect(0, 0, canvas.getWidth(), canvas.getHeight());
-                
-                scaleX = canvas.getWidth() / BASE_WIDTH;
-                scaleY = canvas.getHeight() / BASE_HEIGHT;
-                
-                gc.save();
-                gc.scale(scaleX, scaleY);
-                
-                if (!spotted) {
-                    if (isPlatformerLevel) {
-                        handlePlatformerControls();
-                        player.update(level);
-                    } else {
+                try {
+                    gc.setFill(Color.DARKSLATEGRAY);
+                    gc.fillRect(0, 0, canvas.getWidth(), canvas.getHeight());
+                    
+                    scaleX = canvas.getWidth() / BASE_WIDTH;
+                    scaleY = canvas.getHeight() / BASE_HEIGHT;
+                    
+                    gc.save();
+                    gc.scale(scaleX, scaleY);
+                    
+                    if (!spotted) {
                         handleStealthControls();
                         player.update(level);
-                    }
-                    
-                    player.update(level);
-                    if (movingGuard != null) {
+                        
                         movingGuard.update(level);
-                    }
-                    
-                    if (!isPlatformerLevel && !player.isHidden()) {
-                        boolean seenByStanding = standingGuard != null && standingGuard.canSee(player);
-                        boolean seenByMoving = movingGuard != null && movingGuard.canSee(player);
-                        if (seenByStanding || seenByMoving) {
-                            spotted = true;
-                            SoundManager.playAlert();
+                        
+                        if (!player.isHidden()) {
+                            boolean seenByStanding = standingGuard != null && standingGuard.canSee(player);
+                            boolean seenByMoving = movingGuard != null && movingGuard.canSee(player);
+                            if (seenByStanding || seenByMoving) {
+                                spotted = true;
+                                SoundManager.playAlert();
+                            }
                         }
                     }
-                }
-                
-                if (level.isAtExit((int)(player.getX() / LevelGenerator.TILE_SIZE), 
-                        (int)(player.getY() / LevelGenerator.TILE_SIZE))) {
-                    if (!levelComplete && keys.getOrDefault(KeyCode.E, false)) {
-                        levelComplete();
+                    
+                    if (level.isAtExit((int)(player.getX() / LevelGenerator.TILE_SIZE), 
+                            (int)(player.getY() / LevelGenerator.TILE_SIZE))) {
+                        if (!levelComplete && keys.getOrDefault(KeyCode.E, false)) {
+                            levelComplete();
+                        }
                     }
+                    
+                    renderMap();
+                    player.render(gc);
+                    if (standingGuard != null) standingGuard.render(gc);
+                    if (movingGuard != null) movingGuard.render(gc);
+                    
+                    renderUI();
+                    gc.restore();
+                } catch (Exception e) {
+                    System.err.println("Rendering error: " + e.getMessage());
+                    e.printStackTrace();
                 }
-                
-                renderMap();
-                player.render(gc);
-                if (standingGuard != null) {
-                    standingGuard.render(gc);
-                }
-                if (movingGuard != null) {
-                    movingGuard.render(gc);
-                }
-                
-                renderUI();
-                gc.restore();
             }
         }.start();
-    }
-
-
-    private void handlePlatformerControls() {
-        player.handleInput(KeyCode.A, keys.getOrDefault(KeyCode.A, false));
-        player.handleInput(KeyCode.D, keys.getOrDefault(KeyCode.D, false));
-        
-        if (keys.getOrDefault(KeyCode.SPACE, false)) {
-            player.jump();
-        }
-        
-        // Grapple hook logic remains only for platformer mode
-        if (keys.getOrDefault(KeyCode.G, false)) {
-            int playerTileX = (int)(player.getX() / LevelGenerator.TILE_SIZE);
-            int playerTileY = (int)(player.getY() / LevelGenerator.TILE_SIZE);
-            
-            for (int dx = -3; dx <= 3; dx++) {
-                for (int dy = -3; dy <= 3; dy++) {
-                    if (level.getTile(playerTileX + dx, playerTileY + dy) == LevelGenerator.GRAPPLE_POINT) {
-                        player.startGrapple(
-                            (playerTileX + dx) * LevelGenerator.TILE_SIZE + LevelGenerator.TILE_SIZE/2,
-                            (playerTileY + dy) * LevelGenerator.TILE_SIZE + LevelGenerator.TILE_SIZE/2
-                        );
-                        break;
-                    }
-                }
-            }
-        }
     }
 
     private void handleStealthControls() {
@@ -266,9 +214,6 @@ public class GameApp extends Application {
         player.handleInput(KeyCode.A, keys.getOrDefault(KeyCode.A, false));
         player.handleInput(KeyCode.D, keys.getOrDefault(KeyCode.D, false));
         player.handleInput(KeyCode.H, keys.getOrDefault(KeyCode.H, false));
-        
-        // Ensure no jumping in stealth mode
-        player.handleInput(KeyCode.SPACE, false);
     }
 
     private void renderMap() {
@@ -295,22 +240,6 @@ public class GameApp extends Application {
                         gc.setStroke(Color.BROWN);
                         gc.strokeRect(px, py, LevelGenerator.TILE_SIZE, LevelGenerator.TILE_SIZE);
                         break;
-                    case LevelGenerator.PLATFORM:
-                        gc.setFill(Color.SANDYBROWN);
-                        gc.fillRect(px, py, LevelGenerator.TILE_SIZE, LevelGenerator.TILE_SIZE);
-                        gc.setStroke(Color.BROWN);
-                        gc.strokeRect(px, py, LevelGenerator.TILE_SIZE, LevelGenerator.TILE_SIZE);
-                        break;
-                    case LevelGenerator.GRAPPLE_POINT:
-                        gc.setFill(Color.GOLD);
-                        gc.fillOval(px, py, LevelGenerator.TILE_SIZE, LevelGenerator.TILE_SIZE);
-                        gc.setStroke(Color.DARKGOLDENROD);
-                        gc.strokeOval(px, py, LevelGenerator.TILE_SIZE, LevelGenerator.TILE_SIZE);
-                        break;
-                    case LevelGenerator.GAP:
-                        gc.setFill(Color.SKYBLUE);
-                        gc.fillRect(px, py, LevelGenerator.TILE_SIZE, LevelGenerator.TILE_SIZE);
-                        break;
                     default:
                         gc.setFill(Color.LIGHTGRAY);
                         gc.fillRect(px, py, LevelGenerator.TILE_SIZE, LevelGenerator.TILE_SIZE);
@@ -321,11 +250,6 @@ public class GameApp extends Application {
 
     private void renderUI() {
         player.renderHUD(gc, BASE_WIDTH);
-        
-        if (isPlatformerLevel) {
-            renderCenteredText(gc, "[A/D] MOVE  [SPACE] JUMP  [G] GRAPPLE", 
-                              Color.WHITE, BASE_WIDTH, 30);
-        }
         
         if (level.isAtExit((int)(player.getX() / LevelGenerator.TILE_SIZE), 
                 (int)(player.getY() / LevelGenerator.TILE_SIZE)) && !levelComplete) {
@@ -361,6 +285,21 @@ public class GameApp extends Application {
             double textWidth = gc.getFont().getSize() * message.length() * 0.6;
             gc.fillText(message, (BASE_WIDTH - textWidth) / 2, BASE_HEIGHT / 2);
         }
+    }
+
+    private void renderCenteredText(GraphicsContext gc, String text, Color color, 
+            double canvasWidth, double yPos) {
+        gc.setFont(MESSAGE_FONT);
+        gc.setFill(color);
+        double textWidth = gc.getFont().getSize() * text.length() * 0.5;
+        double xPos = (canvasWidth - textWidth)/2;
+        
+        gc.setStroke(Color.BLACK);
+        gc.setLineWidth(2);
+        gc.strokeText(text, xPos, yPos);
+        
+        gc.setFill(color);
+        gc.fillText(text, xPos, yPos);
     }
 
     private void toggleFullscreen() {
@@ -409,21 +348,6 @@ public class GameApp extends Application {
         }
     }
     
-    private void renderCenteredText(GraphicsContext gc, String text, Color color, 
-            double canvasWidth, double yPos) {
-        gc.setFont(MESSAGE_FONT);
-        gc.setFill(color);
-        double textWidth = gc.getFont().getSize() * text.length() * 0.5;
-        double xPos = (canvasWidth - textWidth)/2;
-        
-        gc.setStroke(Color.BLACK);
-        gc.setLineWidth(2);
-        gc.strokeText(text, xPos, yPos);
-        
-        gc.setFill(color);
-        gc.fillText(text, xPos, yPos);
-    }
-    
     private void levelComplete() {
         levelComplete = true;
         SoundManager.stopBGM();
@@ -431,7 +355,7 @@ public class GameApp extends Application {
     }
     
     private void generateNewLevel() {
-        level = isPlatformerLevel ? new PlatformLevelGenerator() : new LevelGenerator();
+        level = new LevelGenerator();
         
         initialLevelState = new int[LevelGenerator.WIDTH][LevelGenerator.HEIGHT];
         for (int x = 0; x < LevelGenerator.WIDTH; x++) {
@@ -440,49 +364,28 @@ public class GameApp extends Application {
             }
         }
         
-        if (isPlatformerLevel) {
-            // Platformer mode - only moving guard
-            int[] movingGuardPos = findPlatformGuardPosition(level);
-            movingGuard = new GuardVariant(level, GuardVariant.GuardType.MOVING);
-            movingGuard.setPosition(movingGuardPos[0] * LevelGenerator.TILE_SIZE,
-                                  movingGuardPos[1] * LevelGenerator.TILE_SIZE);
-            
-            standingGuard = null;
-            
-            int[] playerPos = level.getValidPlayerSpawn(Arrays.asList(movingGuardPos));
-            player.setPosition(playerPos[0] * LevelGenerator.TILE_SIZE, 
-                             playerPos[1] * LevelGenerator.TILE_SIZE);
-            
-            initialStandingGuardX = 0;
-            initialStandingGuardY = 0;
-            initialMovingGuardX = movingGuardPos[0] * LevelGenerator.TILE_SIZE;
-            initialMovingGuardY = movingGuardPos[1] * LevelGenerator.TILE_SIZE;
-        } else {
-            // Stealth mode - both guards
-            int[] standingGuardPos = level.getRandomFloorPosition();
-            int[] movingGuardPos = level.getRandomFloorPosition();
-            List<int[]> guardPositions = Arrays.asList(standingGuardPos, movingGuardPos);
-            
-            int[] playerPos = level.getValidPlayerSpawn(guardPositions);
-            player.setPosition(playerPos[0] * LevelGenerator.TILE_SIZE, 
-                             playerPos[1] * LevelGenerator.TILE_SIZE);
-            
-            standingGuard = new GuardVariant(level, GuardVariant.GuardType.STANDING);
-            standingGuard.setPosition(standingGuardPos[0] * LevelGenerator.TILE_SIZE,
-                                    standingGuardPos[1] * LevelGenerator.TILE_SIZE);
-            
-            movingGuard = new GuardVariant(level, GuardVariant.GuardType.MOVING);
-            movingGuard.setPosition(movingGuardPos[0] * LevelGenerator.TILE_SIZE,
-                                  movingGuardPos[1] * LevelGenerator.TILE_SIZE);
-            
-            initialStandingGuardX = standingGuardPos[0] * LevelGenerator.TILE_SIZE;
-            initialStandingGuardY = standingGuardPos[1] * LevelGenerator.TILE_SIZE;
-            initialMovingGuardX = movingGuardPos[0] * LevelGenerator.TILE_SIZE;
-            initialMovingGuardY = movingGuardPos[1] * LevelGenerator.TILE_SIZE;
-        }
+        int[] standingGuardPos = level.getRandomFloorPosition();
+        int[] movingGuardPos = level.getRandomFloorPosition();
+        List<int[]> guardPositions = Arrays.asList(standingGuardPos, movingGuardPos);
+        
+        int[] playerPos = level.getValidPlayerSpawn(guardPositions);
+        player.setPosition(playerPos[0] * LevelGenerator.TILE_SIZE, 
+                         playerPos[1] * LevelGenerator.TILE_SIZE);
+        
+        standingGuard = new GuardVariant(level, GuardVariant.GuardType.STANDING);
+        standingGuard.setPosition(standingGuardPos[0] * LevelGenerator.TILE_SIZE,
+                                standingGuardPos[1] * LevelGenerator.TILE_SIZE);
+        
+        movingGuard = new GuardVariant(level, GuardVariant.GuardType.MOVING);
+        movingGuard.setPosition(movingGuardPos[0] * LevelGenerator.TILE_SIZE,
+                              movingGuardPos[1] * LevelGenerator.TILE_SIZE);
         
         initialPlayerX = player.getX();
         initialPlayerY = player.getY();
+        initialStandingGuardX = standingGuardPos[0] * LevelGenerator.TILE_SIZE;
+        initialStandingGuardY = standingGuardPos[1] * LevelGenerator.TILE_SIZE;
+        initialMovingGuardX = movingGuardPos[0] * LevelGenerator.TILE_SIZE;
+        initialMovingGuardY = movingGuardPos[1] * LevelGenerator.TILE_SIZE;
     }
     
     public void pauseGame() {
@@ -496,8 +399,42 @@ public class GameApp extends Application {
         SoundManager.playBGM();
     }
     
-    public void exitToMainMenu() {
-        SoundManager.stopBGM();
-        new MainMenu((Stage)canvas.getScene().getWindow());
+//    public void exitToMainMenu() {
+//        SoundManager.stopBGM();
+//        new MainMenu((Stage)canvas.getScene().getWindow());
+//    }
+    
+   
+    public void startGame(String classType, Stage stage) {
+        this.selectedClass = classType;
+        this.primaryStage = stage;
+
+        new Thread(() -> {
+            // Background work
+            initializeGame();
+            
+            // Switch to FX thread for UI operations
+            javafx.application.Platform.runLater(() -> {
+                try {
+                    setupCanvas();
+                    startGameLoop();
+                    primaryStage.show();
+                } catch (Exception e) {
+                    e.printStackTrace();
+                }
+            });
+        }).start();
     }
+    
+    private void setupCanvas() {
+        canvas = new Canvas(BASE_WIDTH, BASE_HEIGHT);
+        gc = canvas.getGraphicsContext2D();
+        StackPane root = new StackPane(canvas);
+        
+        Scene scene = new Scene(root);
+        setupEventHandlers(scene);
+        configureStage(scene);
+    }
+
+
 }

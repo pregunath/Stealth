@@ -6,7 +6,9 @@ import javafx.scene.paint.Color;
 import javafx.scene.text.Font;
 import javafx.scene.input.KeyCode;
 import java.util.Map;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.io.InputStream;
 import javafx.scene.image.PixelWriter;
 import javafx.scene.image.WritableImage;
@@ -17,18 +19,9 @@ public class Player {
     private final double width = 23;
     private final double height = 23;
     
-    private boolean isJumping = false;
-    private double verticalVelocity = 0;
-    private static final double GRAVITY = 0.5;
-    private static final double JUMP_FORCE = -10;
-    private static final double GRAPPLE_SPEED = 8;
-    private boolean isGrappling = false;
-    private double grappleTargetX, grappleTargetY;
-    
     private boolean hideToggleRequested = false;
     private boolean holdToHideEnabled = false;
     
-    private boolean isPlatformerLevel;
     private boolean hideKeyWasPressed = false;
     private boolean hideKeyJustPressed = false;
     
@@ -46,9 +39,13 @@ public class Player {
     private final Map<KeyCode, Boolean> keys = new HashMap<>();
     private final Font statusFont = new Font("Arial Bold", 28);
     private final Font cooldownFont = new Font("Arial", 16);
+    
+    
+    private List<Gear> equippedGear = new ArrayList<>();
+    private boolean isSneakyClass = false;
+    private boolean isAgileClass = false;
 
-    public Player(LevelGenerator level, boolean isPlatformerLevel) {
-        this.isPlatformerLevel = isPlatformerLevel;
+    public Player(LevelGenerator level) {
         int[] pos = level.getRandomFloorPosition();
         this.x = pos[0] * LevelGenerator.TILE_SIZE;
         this.y = pos[1] * LevelGenerator.TILE_SIZE;
@@ -61,90 +58,15 @@ public class Player {
     public void handleInput(KeyCode code, boolean pressed) {
         keys.put(code, pressed);
         
-        if (!isPlatformerLevel && code == KeyCode.H) {
+        if (code == KeyCode.H) {
             hideKeyJustPressed = pressed && !hideKeyWasPressed;
             hideKeyWasPressed = pressed;
         }
     }
 
-    public void jump() {
-        if (!isJumping && !isGrappling) {
-            verticalVelocity = JUMP_FORCE;
-            isJumping = true;
-        }
-    }
-    
-    public void startGrapple(double targetX, double targetY) {
-        if (!isGrappling) {
-            grappleTargetX = targetX;
-            grappleTargetY = targetY;
-            isGrappling = true;
-            verticalVelocity = 0;
-        }
-    }
-    
-    private void updateGrapple() {
-        if (!isGrappling) return;
-        
-        double dx = grappleTargetX - (x + width/2);
-        double dy = grappleTargetY - (y + height/2);
-        double distance = Math.sqrt(dx*dx + dy*dy);
-        
-        if (distance < 10) {
-            isGrappling = false;
-            isJumping = true;
-            verticalVelocity = 0;
-            return;
-        }
-        
-        double speedX = (dx / distance) * GRAPPLE_SPEED;
-        double speedY = (dy / distance) * GRAPPLE_SPEED;
-        
-        x += speedX;
-        y += speedY;
-    }
-    
-    private void applyGravity(LevelGenerator level) {
-        if (isGrappling) return;
-        
-        verticalVelocity += GRAVITY;
-        y += verticalVelocity;
-        
-        // Check collision with platforms below
-        if (verticalVelocity > 0) {
-            boolean onPlatform1 = level.isWalkable((int)(x / LevelGenerator.TILE_SIZE), 
-                                (int)((y + height) / LevelGenerator.TILE_SIZE));
-            boolean onPlatform2 = level.isWalkable((int)((x + width - 1) / LevelGenerator.TILE_SIZE), 
-                                (int)((y + height) / LevelGenerator.TILE_SIZE));
-            
-            if ((onPlatform1 || onPlatform2) && 
-                y + height >= ((int)((y + height) / LevelGenerator.TILE_SIZE)) * LevelGenerator.TILE_SIZE) {
-                y = ((int)((y + height) / LevelGenerator.TILE_SIZE)) * LevelGenerator.TILE_SIZE - height;
-                isJumping = false;
-                verticalVelocity = 0;
-            }
-        }
-        
-        // Check collision with platforms above (when jumping up)
-        if (verticalVelocity < 0) {
-            boolean hitCeiling1 = !level.isWalkable((int)(x / LevelGenerator.TILE_SIZE), 
-                                 (int)(y / LevelGenerator.TILE_SIZE));
-            boolean hitCeiling2 = !level.isWalkable((int)((x + width - 1) / LevelGenerator.TILE_SIZE), 
-                                 (int)(y / LevelGenerator.TILE_SIZE));
-            
-            if ((hitCeiling1 || hitCeiling2) && 
-                y <= ((int)(y / LevelGenerator.TILE_SIZE) + 1) * LevelGenerator.TILE_SIZE) {
-                verticalVelocity = 0;
-                y = ((int)(y / LevelGenerator.TILE_SIZE) + 1) * LevelGenerator.TILE_SIZE;
-            }
-        }
-    }
-
     public void update(LevelGenerator level) {
-        if (!isPlatformerLevel) {
-            checkHideableProximity(level);
-            handleHiding();
-        }
+        checkHideableProximity(level);
+        handleHiding();
         
         if (!isHidden) {
             move(level);
@@ -196,71 +118,43 @@ public class Player {
         }
     }
 
-    public void move(LevelGenerator level) {
-        if (isPlatformerLevel) {
-            movePlatformer(level);
-        } else {
-            moveStealth(level);
+    private void move(LevelGenerator level) {
+        double effectiveSpeed = speed;
+        
+        if (isAgileClass) {
+            effectiveSpeed *= 1.25;
         }
-    }
-
-    private void movePlatformer(LevelGenerator level) {
-        boolean left = keys.getOrDefault(KeyCode.A, false);
-        boolean right = keys.getOrDefault(KeyCode.D, false);
         
-        double moveX = 0;
-        isMoving = false;
-
-        if (left) { moveX -= 1; isMoving = true; }
-        if (right) { moveX += 1; isMoving = true; }
-
-        moveX *= speed;
-        
-        // Check if we can move horizontally
-        boolean canMoveLeft = !left || !checkCollision(x + moveX, y, level);
-        boolean canMoveRight = !right || !checkCollision(x + moveX, y, level);
-        
-        if ((moveX < 0 && canMoveLeft) || (moveX > 0 && canMoveRight)) {
-            x += moveX;
-        }
-
-        currentImage = isMoving ? runImage : idleImage;
-    }
-
-    private void moveStealth(LevelGenerator level) {
         boolean up = keys.getOrDefault(KeyCode.W, false);
         boolean down = keys.getOrDefault(KeyCode.S, false);
         boolean left = keys.getOrDefault(KeyCode.A, false);
         boolean right = keys.getOrDefault(KeyCode.D, false);
         
-        double moveX = 0;
-        double moveY = 0;
-        isMoving = false;
+        double moveX = (right ? 1 : 0) - (left ? 1 : 0);
+        double moveY = (down ? 1 : 0) - (up ? 1 : 0);
+        
+        isMoving = (moveX != 0 || moveY != 0);
 
-        if (up) { moveY -= 1; isMoving = true; }
-        if (down) { moveY += 1; isMoving = true; }
-        if (left) { moveX -= 1; isMoving = true; }
-        if (right) { moveX += 1; isMoving = true; }
-
-        // Normalize diagonal movement
         if (moveX != 0 && moveY != 0) {
+            // Normalize diagonal movement
             double len = Math.sqrt(moveX * moveX + moveY * moveY);
-            moveX = moveX / len;
-            moveY = moveY / len;
+            moveX = moveX / len * effectiveSpeed;
+            moveY = moveY / len * effectiveSpeed;
+        } else {
+            moveX *= effectiveSpeed;
+            moveY *= effectiveSpeed;
         }
 
-        moveX *= speed;
-        moveY *= speed;
-
-        // Check collisions
-        boolean canMoveX = moveX == 0 || !checkCollision(x + moveX, y, level);
-        boolean canMoveY = moveY == 0 || !checkCollision(x, y + moveY, level);
-
-        if (canMoveX) {
-            x += moveX;
+        // Check collisions in X direction first
+        double newX = x + moveX;
+        if (!checkCollision(newX, y, level)) {
+            x = newX;
         }
-        if (canMoveY) {
-            y += moveY;
+
+        // Then check Y direction
+        double newY = y + moveY;
+        if (!checkCollision(x, newY, level)) {
+            y = newY;
         }
 
         currentImage = isMoving ? runImage : idleImage;
@@ -384,5 +278,41 @@ public class Player {
     }
     public void setHoldToHide(boolean enabled) {
         this.holdToHideEnabled = enabled;
+    }
+    
+    
+    
+    
+    
+    public List<Gear> getEquippedGear() {
+        return equippedGear;
+    }
+    
+    public void setClassType(String classType) {
+        if (classType.equals("Sneaky")) {
+            isSneakyClass = true;
+            // Equip basic sneaky gear
+            equipGear(new SneakyGear("Cloak"));
+            equipGear(new SneakyGear("Boots"));
+        } else if (classType.equals("Agile")) {
+            isAgileClass = true;
+            // Equip basic agile gear
+            equipGear(new AgileGear("Boots"));
+            equipGear(new AgileGear("Belt"));
+        }
+    }
+    
+    public boolean isSneakyClass() {
+        return isSneakyClass;
+    }
+
+    public boolean isAgileClass() {
+        return isAgileClass;
+    }
+    
+    
+    public void equipGear(Gear gear) {
+        equippedGear.add(gear);
+        gear.applyEffect(this);
     }
 }

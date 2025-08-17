@@ -23,22 +23,21 @@ public class MainMenu {
     
     private Canvas canvas;
     private GraphicsContext gc;
-    private Stage stage;
+    private final Stage stage;
+    private final GameApp gameApp;
     private int selectedOption = 0;
-    private final String[] options = {"Stealth Mode", "Platformer Mode", "Exit"};
+    private final String[] options = {"Start Game", "Exit"};
     
-    public MainMenu(Stage stage) {
-        this.stage = stage;
+    public MainMenu(Stage stage, GameApp gameApp) {
+        this.stage = stage; 
+        this.gameApp = gameApp;
         canvas = new Canvas(WIDTH, HEIGHT);
         gc = canvas.getGraphicsContext2D();
         
         StackPane root = new StackPane(canvas);
         Scene scene = new Scene(root);
         
-        // Handle mouse clicks
         canvas.setOnMouseClicked(this::handleMouseClick);
-        
-        // Handle keyboard input
         scene.setOnKeyPressed(this::handleKeyPress);
         
         stage.setScene(scene);
@@ -46,20 +45,17 @@ public class MainMenu {
     }
     
     private void render() {
-        // Clear screen
         gc.setFill(Color.DARKSLATEGRAY);
         gc.fillRect(0, 0, WIDTH, HEIGHT);
         
-        // Draw title
         gc.setFont(TITLE_FONT);
         gc.setFill(Color.WHITE);
-        String title = "STEALTH";
+        String title = "STEALTH: ROGUELIKE";
         double titleWidth = gc.getFont().getSize() * title.length() * 0.6;
         gc.fillText(title, (WIDTH - titleWidth) / 2, 100);
         
-        // Draw menu box
         double boxWidth = 300;
-        double boxHeight = 250;
+        double boxHeight = 150;
         double boxX = (WIDTH - boxWidth) / 2;
         double boxY = 150;
         
@@ -67,7 +63,6 @@ public class MainMenu {
         gc.setLineWidth(2);
         gc.strokeRect(boxX, boxY, boxWidth, boxHeight);
         
-        // Draw menu options
         for (int i = 0; i < options.length; i++) {
             if (i == selectedOption) {
                 gc.setFont(SELECTED_FONT);
@@ -81,7 +76,6 @@ public class MainMenu {
             gc.fillText(options[i], (WIDTH - textWidth) / 2, boxY + 80 + i * 60);
         }
         
-        // Draw version number
         gc.setFont(VERSION_FONT);
         gc.setFill(Color.GRAY);
         gc.fillText("Version 1.0", WIDTH - 80, HEIGHT - 20);
@@ -91,18 +85,14 @@ public class MainMenu {
         double x = event.getX();
         double y = event.getY();
         
-        // Check if click is within menu box
         double boxX = (WIDTH - 300) / 2;
         double boxY = 150;
         
         if (x >= boxX && x <= boxX + 300) {
-            // Check which option was clicked
             if (y >= boxY + 50 && y <= boxY + 90) {
-                selectOption(0); // Start Game
+                selectOption(0);
             } else if (y >= boxY + 110 && y <= boxY + 150) {
-                selectOption(1); // Settings
-            } else if (y >= boxY + 170 && y <= boxY + 210) {
-                selectOption(2); // Exit
+                selectOption(1);
             }
         }
     }
@@ -125,24 +115,13 @@ public class MainMenu {
     
     private void selectOption(int option) {
         switch (option) {
-            case 0: // Stealth Mode
-                new GameApp(false).start(stage); // false for stealth mode
+            case 0:
+                // Pass the existing gameApp instance to ClassSelectionScreen
+                new ClassSelectionScreen(stage, gameApp);
                 break;
-            case 1: // Platformer Mode
-                new GameApp(true).start(stage); // true for platformer mode
-                break;
-            case 2: // Exit
+            case 1:
                 System.exit(0);
                 break;
         }
-    }
-
-    private void showSettings() {
-        Alert settings = new Alert(AlertType.INFORMATION);
-        settings.setTitle("Settings");
-        settings.setHeaderText("Game Settings");
-        settings.setContentText("Game options will be available here");
-        settings.initOwner(stage);
-        settings.showAndWait();
     }
 }

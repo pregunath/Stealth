@@ -136,7 +136,7 @@ public class PauseMenu {
         alert.showAndWait().ifPresent(response -> {
             if (response == yesButton) {
                 stage.close();
-                gameApp.exitToMainMenu();
+                gameApp.showMainMenu();
             }
         });
     }
